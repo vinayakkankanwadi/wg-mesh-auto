@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
+import os
 
 # -------------------------------
 # Constants
@@ -25,12 +26,10 @@ def run_command(args):
 def load_database():
     if DATABASE_PATH.exists():
         try:
-            df = pd.read_csv(DATABASE_PATH)
-            return df
+            return pd.read_csv(DATABASE_PATH)
         except Exception as e:
             st.error(f"Error reading database: {e}")
-    else:
-        return None
+    return pd.DataFrame(columns=["name", "address", "endpoint", "allowedips", "listenport"])
 
 def list_config_files():
     if OUTPUT_DIR.exists():
@@ -44,38 +43,27 @@ def list_config_files():
                 "Last Modified": datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             })
         return pd.DataFrame(data)
-    return pd.DataFrame()
+    return pd.DataFrame(columns=["Filename", "Size (KB)", "Last Modified"])
 
 # -------------------------------
-# App Layout
+# Title
 # -------------------------------
 st.title("🔧 WireGuard Mesh Network Automation")
 st.caption("Automate managing your WireGuard mesh network using wg-meshconf")
 
 # -------------------------------
-# Peer Table Section
+# PEERS Table
 # -------------------------------
 st.subheader("📄 PEERS")
-
-if "peers_updated" not in st.session_state:
-    st.session_state.peers_updated = False
-
 df = load_database()
-if df is not None:
-    st.dataframe(df, use_container_width=True)
-else:
-    st.info("No database found. Please initialize it first.")
+st.dataframe(df, use_container_width=True)
 
 # -------------------------------
-# Generated Config Table Section
+# Config Files Table
 # -------------------------------
 st.subheader("📁 Generated Config Files")
-
 config_df = list_config_files()
-if not config_df.empty:
-    st.dataframe(config_df, use_container_width=True)
-else:
-    st.info("No config files found. Run 'genconfig' to generate.")
+st.dataframe(config_df, use_container_width=True)
 
 # -------------------------------
 # Commands Section
@@ -89,15 +77,14 @@ if command == "init":
     if st.button("Initialize Database"):
         output = run_command(["init"])
         st.code(output)
-        st.session_state.peers_updated = True
         st.rerun()
 
 elif command == "addpeer":
     with st.form("Add Peer"):
-        name = st.text_input("Peer Name")
-        address = st.text_input("Address", placeholder="10.0.0.1/32")
-        endpoint = st.text_input("Endpoint (Optional)")
-        allowed_ips = st.text_input("Allowed IPs (Optional)")
+        name = st.text_input("Peer Name", value="PEER101")
+        address = st.text_input("Address", value="10.0.0.1/32")
+        endpoint = st.text_input("Endpoint (Optional)", value="20.0.0.1")
+        allowed_ips = st.text_input("Allowed IPs (Optional)", value="30.0.1.0/24")
         private_key = st.text_input("Private Key (Optional)")
         listen_port = st.text_input("Listen Port", placeholder="51820")
         submitted = st.form_submit_button("Add Peer")
@@ -108,7 +95,6 @@ elif command == "addpeer":
             if private_key: args += ["--privatekey", private_key]
             if listen_port: args += ["--listenport", listen_port]
             st.code(run_command(args))
-            st.session_state.peers_updated = True
             st.rerun()
 
 elif command == "updatepeer":
@@ -128,14 +114,12 @@ elif command == "updatepeer":
             if private_key: args += ["--privatekey", private_key]
             if listen_port: args += ["--listenport", listen_port]
             st.code(run_command(args))
-            st.session_state.peers_updated = True
             st.rerun()
 
 elif command == "delpeer":
     name = st.text_input("Peer Name")
     if st.button("Delete Peer"):
         st.code(run_command(["delpeer", name]))
-        st.session_state.peers_updated = True
         st.rerun()
 
 elif command == "showpeers":
@@ -152,4 +136,23 @@ elif command == "genconfig":
             if name: args.append(name)
             if output_dir: args += ["-o", output_dir]
             st.code(run_command(args))
+            st.rerun()
+
+# -------------------------------
+# Danger Zone
+# -------------------------------
+st.markdown("---")
+st.subheader("⚠️ Danger Zone")
+
+if st.button("🧹 Clear All Files"):
+    try:
+        if DATABASE_PATH.exists():
+            DATABASE_PATH.unlink()
+        if OUTPUT_DIR.exists():
+            for file in OUTPUT_DIR.glob("*.conf"):
+                file.unlink()
+        st.success("All files cleared successfully.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error clearing files: {e}")
 
